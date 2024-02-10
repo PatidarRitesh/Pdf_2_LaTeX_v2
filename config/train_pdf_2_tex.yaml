@@ -1,7 +1,7 @@
-resume_from_checkpoint_path: "/mnt/NAS/patidarritesh/PDF_2_LaTeX/result/pdf_2_tex/20240203_220229/last.ckpt"
+resume_from_checkpoint_path: null
 result_path: "result"
 model_path: null
-dataset_paths: ["/mnt/NAS/patidarritesh/PDF_2_LaTeX/pdf_2_tex/dataset/root/train.jsonl"]
+dataset_paths: ["/mnt/NAS/patidarritesh/Pdf_2_LaTeX_v2/pdf_2_tex/dataset/root/train.jsonl"]
 tokenizer: "dataset/tokenizer.json"
 exp_name: "pdf_2_tex"
 train_batch_sizes: [1]

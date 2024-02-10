@@ -312,7 +312,7 @@ class SwinEncoder(nn.Module):
 
 
 
-class BARTDecoder(nn.Module):
+class MistralDecoder(nn.Module):
     """
     Decoder based on Multilingual BART
     Set the initial weights and configuration with a pretrained multilingual BART model,
@@ -350,8 +350,8 @@ class BARTDecoder(nn.Module):
         self.tokenizer.eos_token = "</s>"
         self.tokenizer.unk_token = "<unk>"
 
-        self.model = MBartForCausalLM(
-            config=MBartConfig(
+        self.model =MistralForCausalLM(
+            config=MistralConfig(
                 is_decoder=True,
                 is_encoder_decoder=False,
                 add_cross_attention=True,
@@ -368,8 +368,8 @@ class BARTDecoder(nn.Module):
         self.model.prepare_inputs_for_generation = self.prepare_inputs_for_inference
 
         if not name_or_path:
-            bart_state_dict = MBartForCausalLM.from_pretrained(
-                "facebook/mbart-large-50"
+            bart_state_dict = MistralForCausalLM.from_pretrained(
+               "mistralai/Mistral-7B-v0.1"
             ).state_dict()
             new_bart_state_dict = self.model.state_dict()
             for x in new_bart_state_dict:
@@ -378,7 +378,7 @@ class BARTDecoder(nn.Module):
                     and self.max_position_embeddings != 1024
                 ):
                     new_bart_state_dict[x] = torch.nn.Parameter(
-                        self.resize_bart_abs_pos_emb(
+                        self.resize_mistral_abs_pos_emb(
                             bart_state_dict[x],
                             self.max_position_embeddings
                             + 2,  # https://github.com/huggingface/transformers/blob/v4.11.3/src/transformers/models/mbart/modeling_mbart.py#L118-L119
@@ -458,7 +458,7 @@ class BARTDecoder(nn.Module):
         )
 
     @staticmethod
-    def resize_bart_abs_pos_emb(weight: torch.Tensor, max_length: int) -> torch.Tensor:
+    def resize_mistral_abs_pos_emb(weight: torch.Tensor, max_length: int) -> torch.Tensor:
         """
         Resize position embeddings
         Truncate if sequence length of MBart backbone is greater than given max_length,
@@ -614,7 +614,7 @@ class PDF_2_TEX_Model(PreTrainedModel):
             embed_dim=self.config.embed_dim,
             num_heads=self.config.num_heads,
         )
-        self.decoder = BARTDecoder(
+        self.decoder = MistralDecoder(
             max_position_embeddings=self.config.max_position_embeddings,
             decoder_layer=self.config.decoder_layer,
             name_or_path=self.config.name_or_path,
@@ -953,7 +953,7 @@ class PDF_2_TEX_Model(PreTrainedModel):
             max_length != model.config.max_position_embeddings
         ):  # if max_length of trained model differs max_length you want to train
             model.decoder.model.model.decoder.embed_positions.weight = torch.nn.Parameter(
-                model.decoder.resize_bart_abs_pos_emb(
+                model.decoder.resize_mistral_abs_pos_emb(
                     model.decoder.model.model.decoder.embed_positions.weight,
                     max_length
                     + 2,  # https://github.com/huggingface/transformers/blob/v4.11.3/src/transformers/models/mbart/modeling_mbart.py#L118-L119
