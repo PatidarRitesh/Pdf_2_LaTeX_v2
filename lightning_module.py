@@ -55,19 +55,21 @@ class PDF_2_TEX_ModelPLModule(pl.LightningModule):
             )
 
     def training_step(self, batch, batch_idx):
-        image_tensors, decoder_input_ids, attention_masks = list(), list(), list()
+        image_tensors, text_tensors, decoder_input_ids, attention_masks = list(), list(),list(), list()
         if batch is None:
             return
         for batch_data in batch:
             if batch_data is None or batch_data[0] is None:
                 continue
             image_tensors.append(batch_data[0])
-            decoder_input_ids.append(batch_data[1])
-            attention_masks.append(batch_data[2])
+            text_tensors.append(batch_data[1])
+            decoder_input_ids.append(batch_data[2])
+            attention_masks.append(batch_data[3])
         image_tensors = torch.cat(image_tensors)
+        text_tensors = torch.cat(text_tensors)
         decoder_input_ids = torch.cat(decoder_input_ids)
         attention_masks = torch.cat(attention_masks)
-        loss = self.model(image_tensors, decoder_input_ids, attention_masks)[0]
+        loss = self.model(image_tensors, text_tensors, decoder_input_ids, attention_masks)[0]
         if loss is not None:
             self.log_dict({"train/loss": loss}, sync_dist=True)
         return loss
@@ -75,8 +77,10 @@ class PDF_2_TEX_ModelPLModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx, dataset_idx=0):
         if batch is None:
             return
-        image_tensors, decoder_input_ids, _ = batch
+        image_tensors, text_tensors, decoder_input_ids, _ = batch
         if image_tensors is None:
+            return
+        if text_tensors is None:
             return
         markdown = pad_sequence(
             decoder_input_ids,
@@ -84,6 +88,7 @@ class PDF_2_TEX_ModelPLModule(pl.LightningModule):
         )
         preds = self.model.inference(
             image_tensors=image_tensors,
+            text_tensors=text_tensors,
             return_attentions=False,
         )["predictions"]
 

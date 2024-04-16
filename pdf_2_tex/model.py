@@ -1,12 +1,10 @@
-
-
 import logging
 import math
 import os
 from typing import List, Optional, Union
 from collections import defaultdict
 from pathlib import Path
-
+import pickle
 import numpy as np
 from PIL import Image
 import cv2
@@ -17,23 +15,16 @@ import torch.nn.functional as F
 from PIL import ImageOps
 from timm.models.swin_transformer import SwinTransformer
 from torchvision.transforms.functional import resize, rotate
-# from transformers import (
-#     PreTrainedTokenizerFast,
-#     StoppingCriteria,
-#     StoppingCriteriaList,
-#     MBartConfig,
-#     MBartForCausalLM,
-# )
-# import mistral mixure of expert
-
 from transformers import (
+    BertModel,
+    BertTokenizer,
+    BertConfig,
     PreTrainedTokenizerFast,
     StoppingCriteria,
     StoppingCriteriaList,
-    MistralConfig,
-    MistralForCausalLM,
+    MBartConfig,
+    MBartForCausalLM,
 )
-
 from transformers.file_utils import ModelOutput
 from transformers.modeling_utils import PretrainedConfig, PreTrainedModel
 from pdf_2_tex.postprocessing import postprocess
@@ -41,6 +32,99 @@ from torchvision import transforms
 import fitz # PyMuPDF
 
 
+
+
+
+class BERTEncoder(nn.Module):
+    """
+    Encoder based on BERT (Bidirectional Encoder Representations from Transformers)
+
+    Args:
+        encoder_layer:
+            Number of layers of the BERT encoder.
+        max_position_embeddings:
+            The maximum sequence length to be trained.
+        hidden_dimension:
+            The dimensionality of the hidden layers.
+        name_or_path:
+            Name of a pretrained model name either registered in huggingface.co or saved locally.
+            Otherwise, `bert-base-multilingual-cased` will be set.
+    """
+
+    def __init__(
+        self,
+        # encoder_layer: int,
+        max_position_embeddings: int,
+        hidden_size: int,
+        num_attention_heads: int,
+        txt_enc_name_or_path: Union[str, bytes, Path] = None,
+    ):
+        super().__init__()
+        # self.encoder_layer = encoder_layer
+        self.max_position_embeddings = max_position_embeddings
+        self.hidden_size = hidden_size
+        self.num_attention_heads = num_attention_heads
+        
+
+        self.model = BertModel(
+            config = BertConfig(
+                hidden_size=1024,
+                max_position_embeddings=1024,
+                num_attention_heads=16
+            )
+        )
+        
+        # Initialize BERT model
+        if not txt_enc_name_or_path:
+            txt_enc_name_or_path = "bert-base-uncased"
+        self.model = BertModel.from_pretrained(txt_enc_name_or_path)
+        
+        self.Linear = nn.Linear(
+                            in_features = 768,
+                            out_features = 1024
+                            )
+        
+    def forward(self, input_ids):
+        input_ids = input_ids.to(torch.int64)
+        outputs = self.model(
+            input_ids=input_ids
+        )
+
+        lst_hidden_states = outputs.last_hidden_state
+        lst_hidden_states =  self.Linear(lst_hidden_states)
+        outputs.last_hidden_state = lst_hidden_states
+        # print("final bert embedding: ", outputs.last_hidden_state.shape)
+
+        return outputs.last_hidden_state
+
+    def prepare_input(self, pdf_path:str, random_padding: bool = False):
+        # open pdf and generate text from the first page of pdf
+
+        paper_id = pdf_path.split('/')[-1]
+        txt_path = f"/mnt/NAS/patidarritesh/grounding_text_PDF_2_LaTeX/pdf_2_tex/dataset/text_tensor/{paper_id}.pkl"
+         
+        if not os.path.exists(txt_path):
+            doc = fitz.open(pdf_path)
+            text = doc[0].get_text()
+            # print("text: ", text)
+
+            # Tokenize the text
+            tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+            text_input_ids = tokenizer(text, return_tensors="pt")["input_ids"].squeeze(0)
+
+            # print("Text Input IDS: ", text_input_ids)
+            # print("Text Input IDS Shape: ", text_input_ids.shape)
+
+            with open(txt_path, "wb") as f:
+                f.write({"text_input_ids": text_input_ids})
+                
+        else:
+            with open(txt_path, "rb") as f:
+                text_input_ids = pickle.load(f)
+                text_input_ids = torch.tensor(text_input_ids['text_input_ids'])
+    
+        return text_input_ids[:512]
+    
 class SwinEncoder(nn.Module):
     r"""
     Encoder based on SwinTransformer
@@ -65,7 +149,7 @@ class SwinEncoder(nn.Module):
         patch_size: int,
         embed_dim: int,
         num_heads: List[int],
-        name_or_path: Union[str, bytes, os.PathLike] = None,
+        img_enc_name_or_path: Union[str, bytes, os.PathLike] = None,
     ):
         super().__init__()
         self.input_size = input_size
@@ -87,7 +171,7 @@ class SwinEncoder(nn.Module):
         )
 
         # weight init with swin
-        if not name_or_path:
+        if not img_enc_name_or_path:
             swin_state_dict = timm.create_model(
                 "swin_base_patch4_window12_384", pretrained=True
             ).state_dict()
@@ -144,175 +228,84 @@ class SwinEncoder(nn.Module):
         coords = cv2.findNonZero(gray)  # Find all non-zero points (text)
         a, b, w, h = cv2.boundingRect(coords)  # Find minimum spanning bounding box
         return img.crop((a, b, w + a, h + b))
-
-    # @property
-    # def to_tensor(self):
-    #     if self.training:
-    #         return train_transform
-    #     else:
-    #         return test_transform
+  
     def to_tensor(self, img: Image.Image):
         if self.training:
             
             return transforms.ToTensor()(img)
         else:
             return transforms.ToTensor()(img)
-    # def to_tensor(self, img: Image.Image):
-    #     if self.training:
-    #         # Resize the image to (224, 224) before transforming to tensor
-    #         transform = transforms.Compose([
-    #             transforms.Resize((224, 224)),
-    #             transforms.ToTensor()
-    #         ])
-    #         return transform(img)
-    #     else:
-    #         # Resize the image to (224, 224) before transforming to tensor
-    #         transform = transforms.Compose([
-    #             transforms.Resize((224, 224)),
-    #             transforms.ToTensor()
-    #         ])
-    #         return transform(img)
-
-    # def prepare_input(self, pdf_path:str, random_padding: bool = False):
-    #     self.input_tensor = None
-    #     if pdf_path is None:
-    #         return
-    #     input_size= [896,672]
-    #     # Convert PDF to images using PyMuPDF
-    #     doc = fitz.open(pdf_path)
-    #     i=0
-    #     for page_number in range(len(doc)):
-    #         if i==4:
-    #             break
-    #         page = doc[page_number]
-    #         image = page.get_pixmap()
-    #         # Convert Pixmap to PIL Image
-    #         img = Image.frombytes("RGB", [image.width, image.height], image.samples)
-
-    #         # crop margins
-    #         try:
-    #             img = self.crop_margin(img.convert("RGB"))
-    #         except OSError:
-    #             # might throw an error for broken files
-    #             return
-    #         if img.height == 0 or img.width == 0:
-    #             return
-    #         if self.align_long_axis and (
-    #             (input_size[0] > input_size[1] and img.width > img.height)
-    #             or (input_size[0] < input_size[1] and img.width < img.height)
-    #         ):
-    #             img = rotate(img, angle=-90, expand=True)
-    #         img = resize(img, min(input_size))
-    #         img.thumbnail((input_size[1], input_size[0]))
-    #         delta_width = input_size[1] - img.width
-    #         delta_height = input_size[0] - img.height
-    #         if random_padding:
-    #             pad_width = np.random.randint(low=0, high=delta_width + 1)
-    #             pad_height = np.random.randint(low=0, high=delta_height + 1)
-    #         else:
-    #             pad_width = delta_width // 2
-    #             pad_height = delta_height // 2
-    #         padding = (
-    #             pad_width,
-    #             pad_height,
-    #             delta_width - pad_width,
-    #             delta_height - pad_height,
-    #         )
-    #         padded_img = ImageOps.expand(img, padding)
-
-    #         # resize the image (224,224)
-    #         # padded_img= padded_img.resize((448,224))
-    #         page_tensor = self.to_tensor(padded_img)
-    #         # page_tensor = self.to_tensor(ImageOps.expand(img, padding))
-
-    #         if self.input_tensor is None:
-    #            self.input_tensor = page_tensor
-    #         else:
-    #             self.input_tensor = torch.cat([self.input_tensor, page_tensor], dim=2)
-    #         i+=1
-
-    #     target_shape = (3, self.input_size[0], self.input_size[1])
-    #     original_shape = self.input_tensor.shape
-    #     padding = [0, target_shape[2] - original_shape[2]]
-
-    #     # Apply padding using torch.nn.functional.pad
-    #     self.input_tensor = torch.nn.functional.pad(self.input_tensor, padding)
-
-    #     return self.input_tensor
-
+    
     def prepare_input(self, pdf_path:str, random_padding: bool = False):
         self.input_tensor = None
+
         if pdf_path is None:
             return
-        input_size= [896,672]
-        # Convert PDF to images using PyMuPDF
-        doc = fitz.open(pdf_path)
-        i=0
-        for page_number in range(len(doc)):
-            if i==1:
-                break
-            page = doc[page_number]
-            image = page.get_pixmap()
-            # Convert Pixmap to PIL Image
-            img = Image.frombytes("RGB", [image.width, image.height], image.samples)
+        
+        paper_id = pdf_path.split('/')[-1]
+        img_file = f"/mnt/NAS/patidarritesh/grounding_text_PDF_2_LaTeX/pdf_2_tex/dataset/img_tensor/{paper_id}.pkl"
 
-            # crop margins
-            try:
-                img = self.crop_margin(img.convert("RGB"))
-            except OSError:
-                # might throw an error for broken files
-                return
-            if img.height == 0 or img.width == 0:
-                return
-            if self.align_long_axis and (
-                (input_size[0] > input_size[1] and img.width > img.height)
-                or (input_size[0] < input_size[1] and img.width < img.height)
-            ):
-                img = rotate(img, angle=-90, expand=True)
-            img = resize(img, min(input_size))
-            img.thumbnail((input_size[1], input_size[0]))
-            delta_width = input_size[1] - img.width
-            delta_height = input_size[0] - img.height
-            if random_padding:
-                pad_width = np.random.randint(low=0, high=delta_width + 1)
-                pad_height = np.random.randint(low=0, high=delta_height + 1)
-            else:
-                pad_width = delta_width // 2
-                pad_height = delta_height // 2
-            padding = (
-                pad_width,
-                pad_height,
-                delta_width - pad_width,
-                delta_height - pad_height,
-            )
-            padded_img = ImageOps.expand(img, padding)
+        if not os.path.exists(img_file):
+            input_size= [896,672]
+            doc = fitz.open(pdf_path)
+            i=0
+            for page_number in range(len(doc)):
+                if i==1:
+                    break
+                page = doc[page_number]
+                image = page.get_pixmap()
+                img = Image.frombytes("RGB", [image.width, image.height], image.samples)
 
-            # resize the image (224,224)
-            # padded_img= padded_img.resize((224,224))
-            page_tensor = self.to_tensor(padded_img)
-            # page_tensor = self.to_tensor(ImageOps.expand(img, padding))
-            # print("Page Tensor: ", page_tensor.shape)
-            if self.input_tensor is None:
-               self.input_tensor = page_tensor
-            else:
-                self.input_tensor = torch.cat([self.input_tensor, page_tensor], dim=1)
-            i+=1
+                try:
+                    img = self.crop_margin(img.convert("RGB"))
+                except OSError:
+                    return
+                if img.height == 0 or img.width == 0:
+                    return
+                if self.align_long_axis and (
+                    (input_size[0] > input_size[1] and img.width > img.height)
+                    or (input_size[0] < input_size[1] and img.width < img.height)
+                ):
+                    img = rotate(img, angle=-90, expand=True)
+                img = resize(img, min(input_size))
+                img.thumbnail((input_size[1], input_size[0]))
+                delta_width = input_size[1] - img.width
+                delta_height = input_size[0] - img.height
+                if random_padding:
+                    pad_width = np.random.randint(low=0, high=delta_width + 1)
+                    pad_height = np.random.randint(low=0, high=delta_height + 1)
+                else:
+                    pad_width = delta_width // 2
+                    pad_height = delta_height // 2
+                padding = (
+                    pad_width,
+                    pad_height,
+                    delta_width - pad_width,
+                    delta_height - pad_height,
+                )
+                padded_img = ImageOps.expand(img, padding)
 
-        # VERTICAL PADDING added
-        # target_shape = (3, self.input_size[0], self.input_size[1])
-        # padding_needed = (target_shape[1] - self.input_tensor.size(1))
-        # self.input_tensor = torch.nn.functional.pad(self.input_tensor, (0, 0,0, padding_needed))
+                page_tensor = self.to_tensor(padded_img)
+                
+                if self.input_tensor is None:
+                    self.input_tensor = page_tensor
+                else:
+                    self.input_tensor = torch.cat([self.input_tensor, page_tensor], dim=1)
+                i+=1
 
+            with open(img_file, "wb") as f:
+                pickle.dump(self.input_tensor, f)
+        else:
+            with open(img_file, "rb") as f:
+                self.input_tensor = pickle.load(f)
+                self.input_tensor = torch.tensor(self.input_tensor)
 
-        # img = tensor_to_image(self.input_tensor, '/home/husainmalwat/PDF_2_LaTeX/img_test_2.png')
-
-        # print("final Input Tensor: ", )
         return self.input_tensor
 
 
 
 
-class MistralDecoder(nn.Module):
+class BARTDecoder(nn.Module):
     """
     Decoder based on Multilingual BART
     Set the initial weights and configuration with a pretrained multilingual BART model,
@@ -350,8 +343,8 @@ class MistralDecoder(nn.Module):
         self.tokenizer.eos_token = "</s>"
         self.tokenizer.unk_token = "<unk>"
 
-        self.model =MistralForCausalLM(
-            config=MistralConfig(
+        self.model = MBartForCausalLM(
+            config=MBartConfig(
                 is_decoder=True,
                 is_encoder_decoder=False,
                 add_cross_attention=True,
@@ -368,8 +361,8 @@ class MistralDecoder(nn.Module):
         self.model.prepare_inputs_for_generation = self.prepare_inputs_for_inference
 
         if not name_or_path:
-            bart_state_dict = MistralForCausalLM.from_pretrained(
-               "mistralai/Mistral-7B-v0.1"
+            bart_state_dict = MBartForCausalLM.from_pretrained(
+                "facebook/mbart-large-50"
             ).state_dict()
             new_bart_state_dict = self.model.state_dict()
             for x in new_bart_state_dict:
@@ -378,7 +371,7 @@ class MistralDecoder(nn.Module):
                     and self.max_position_embeddings != 1024
                 ):
                     new_bart_state_dict[x] = torch.nn.Parameter(
-                        self.resize_mistral_abs_pos_emb(
+                        self.resize_bart_abs_pos_emb(
                             bart_state_dict[x],
                             self.max_position_embeddings
                             + 2,  # https://github.com/huggingface/transformers/blob/v4.11.3/src/transformers/models/mbart/modeling_mbart.py#L118-L119
@@ -458,7 +451,7 @@ class MistralDecoder(nn.Module):
         )
 
     @staticmethod
-    def resize_mistral_abs_pos_emb(weight: torch.Tensor, max_length: int) -> torch.Tensor:
+    def resize_bart_abs_pos_emb(weight: torch.Tensor, max_length: int) -> torch.Tensor:
         """
         Resize position embeddings
         Truncate if sequence length of MBart backbone is greater than given max_length,
@@ -497,7 +490,8 @@ class PDF_2_TEX_Config(PretrainedConfig):
         decoder_layer: int = 10,
         max_position_embeddings: int = None,
         max_length: int = 4096,
-        name_or_path: Union[str, bytes, os.PathLike] = "",
+        img_enc_name_or_path: Union[str, bytes, os.PathLike] = "",
+        txt_enc_name_or_path: Union[str, bytes, os.PathLike] = "",
         patch_size: int = 4,
         embed_dim: int = 128,
         num_heads: List[int] = [4, 8, 16, 32],
@@ -514,7 +508,8 @@ class PDF_2_TEX_Config(PretrainedConfig):
             max_length if max_position_embeddings is None else max_position_embeddings
         )
         self.max_length = max_length
-        self.name_or_path = name_or_path
+        self.img_enc_name_or_path = img_enc_name_or_path
+        self.txt_enc_name_or_path = txt_enc_name_or_path
         self.patch_size = patch_size
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -604,17 +599,23 @@ class PDF_2_TEX_Model(PreTrainedModel):
     def __init__(self, config: PDF_2_TEX_Config):
         super().__init__(config)
         self.config = config
-        self.encoder = SwinEncoder(
+        self.txt_encoder = BERTEncoder(
+            max_position_embeddings=1024,
+            hidden_size=1024,
+            num_attention_heads=16,
+            txt_enc_name_or_path=config.txt_enc_name_or_path
+            )
+        self.img_encoder = SwinEncoder(
             input_size=self.config.input_size,
             align_long_axis=self.config.align_long_axis,
             window_size=self.config.window_size,
             encoder_layer=self.config.encoder_layer,
-            name_or_path=self.config.name_or_path,
+            img_enc_name_or_path=self.config.img_enc_name_or_path,
             patch_size=self.config.patch_size,
             embed_dim=self.config.embed_dim,
             num_heads=self.config.num_heads,
         )
-        self.decoder = MistralDecoder(
+        self.decoder = BARTDecoder(
             max_position_embeddings=self.config.max_position_embeddings,
             decoder_layer=self.config.decoder_layer,
             name_or_path=self.config.name_or_path,
@@ -624,6 +625,7 @@ class PDF_2_TEX_Model(PreTrainedModel):
     def forward(
         self,
         image_tensors: torch.Tensor,
+        text_tensors: torch.Tensor,
         decoder_input_ids: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
     ):
@@ -635,7 +637,28 @@ class PDF_2_TEX_Model(PreTrainedModel):
             image_tensors: (batch_size, num_channels, height, width)
             decoder_input_ids: (batch_size, sequence_length, embedding_dim)
         """
-        encoder_outputs = self.encoder(image_tensors)
+
+
+        # print("Shape of Image Tensors: ", image_tensors.shape)
+        # print("Shape of Text Tensors: ", text_tensors.shape)
+        # print("Shape of Decoder Input IDS: ", decoder_input_ids.shape)
+        # print("Shape of Attention Mask: ", attention_mask.shape)
+
+        # print("----------Inside Encoders---------------")
+
+        img_encoder_outputs = self.img_encoder(image_tensors)
+        txt_encoder_outputs = self.txt_encoder(text_tensors)
+
+        # print("Shapeof Image embedding: ",img_encoder_outputs.shape, type(img_encoder_outputs))
+        # print("Shapeof Text embedding: ", type(txt_encoder_outputs))
+        # input("press enter")
+        
+
+        # Combine the image and text embeddings and generate Encoder outputs 
+        encoder_outputs = torch.cat((img_encoder_outputs, txt_encoder_outputs), dim=1)
+        # encoder_outputs = img_encoder_outputs
+        ## -----------------------------------------------------------------
+
         decoder_outputs = self.decoder(
             input_ids=decoder_input_ids[:, :-1].contiguous(),
             encoder_hidden_states=encoder_outputs,
@@ -647,147 +670,12 @@ class PDF_2_TEX_Model(PreTrainedModel):
     def _init_weights(self, *args, **kwargs):
         return
 
-    # def inference(
-    #     self,
-    #     image: Image.Image = None,
-    #     image_tensors: Optional[torch.Tensor] = None,
-    #     return_attentions: bool = False,
-    #     early_stopping: bool = True,
-    # ):
-    #     """
-    #     Generate a token sequence in an auto-regressive manner.
-
-    #     Args:
-    #         image: input document image (PIL.Image)
-    #         image_tensors: (1, num_channels, height, width)
-    #             convert prompt to tensor if image_tensor is not fed
-    #     """
-    #     output = {
-    #         "predictions": list(),
-    #         "sequences": list(),
-    #         "repeats": list(),
-    #         "repetitions": list(),
-    #     }
-    #     if image is None and image_tensors is None:
-    #         logging.warn("Image not found")
-    #         return output
-
-    #     if image_tensors is None:
-    #         image_tensors = self.encoder.prepare_input(image).unsqueeze(0)
-
-    #     if self.device.type != "mps":
-    #         image_tensors = image_tensors.to(next(self.parameters()).dtype)
-
-    #     image_tensors = image_tensors.to(self.device)
-
-    #     last_hidden_state = self.encoder(image_tensors)
-
-    #     encoder_outputs = ModelOutput(
-    #         last_hidden_state=last_hidden_state, attentions=None
-    #     )
-
-    #     if len(encoder_outputs.last_hidden_state.size()) == 1:
-    #         encoder_outputs.last_hidden_state = (
-    #             encoder_outputs.last_hidden_state.unsqueeze(0)
-    #         )
-    #     print("encoder_outputs.last_hidden_state shape:", encoder_outputs.last_hidden_state.shape)
-    #     print("encoder_outputs.last_hidden_state:", encoder_outputs.last_hidden_state)
-    #     # get decoder output
-    #     decoder_output = self.decoder.model.generate(
-    #         encoder_outputs=encoder_outputs,
-    #         min_length=1,
-    #         max_length=self.config.max_length,
-    #         pad_token_id=self.decoder.tokenizer.pad_token_id,
-    #         eos_token_id=self.decoder.tokenizer.eos_token_id,
-    #         use_cache=True,
-    #         bad_words_ids=[
-    #             [self.decoder.tokenizer.unk_token_id],
-    #         ],
-    #         return_dict_in_generate=True,
-    #         output_scores=True,
-    #         output_attentions=return_attentions,
-    #         do_sample=False,
-    #         stopping_criteria=StoppingCriteriaList(
-    #             [StoppingCriteriaScores()] if early_stopping else []
-    #         ),
-    #     )
-    #     output["repetitions"] = decoder_output.sequences.clone()
-    #     output["sequences"] = decoder_output.sequences.clone()
-    #     batch_size = len(decoder_output.sequences)
-
-    #     logits = torch.stack(decoder_output.scores, 1).cpu().max(-1)
-    #     values = logits.values
-    #     indices = logits.indices
-    #     print("min_length:", 1)
-    #     print("max_length:", self.config.max_length)
-    #     print("decoder_output.sequences:", decoder_output.sequences)
-    #     print("logits:", logits)
-    #     print("indices:", indices)
-    #     for b in range(batch_size):
-    #         mask = indices[b] != self.decoder.tokenizer.pad_token_id
-    #         N = mask.sum().item()
-    #         var = np.array(
-    #             [np.var(s) / len(s) for s in batch(values[b, mask].float().numpy())]
-    #         )
-    #         if len(var) < 10:
-    #             output["repeats"].append(None)
-    #             continue
-    #         varvar = np.array([np.var(v) for v in subdiv(var[::-1])][::-1])
-    #         minlen = 120
-    #         if (
-    #             indices[b] == self.decoder.tokenizer.eos_token_id
-    #         ).any() and N + 1 < indices.shape[1]:
-    #             # there is an end to the generation, likely no repetitions
-    #             output["repeats"].append(None)
-    #             continue
-    #         small_var = np.where(varvar < 0.045)[0]
-    #         if early_stopping and len(small_var) > 1:
-    #             if np.all(np.diff(small_var) < 2):
-    #                 idx = int(min(max(small_var[0], 1) * 1.08 + minlen, 4095))
-    #                 if idx / N > 0.9:  # at most last bit
-    #                     output["repeats"].append(None)
-    #                     continue
-    #                 elif small_var[0] < 30:
-    #                     idx = 0
-    #                 logging.warn("Found repetitions in sample %i" % b)
-    #                 output["repeats"].append(idx)
-    #                 output["sequences"][b, idx:] = self.decoder.tokenizer.pad_token_id
-    #                 output["repetitions"][b, :idx] = self.decoder.tokenizer.pad_token_id
-    #             else:
-    #                 output["repeats"].append(None)
-    #         else:
-    #             output["repeats"].append(None)
-    #     output["repetitions"] = self.decoder.tokenizer.batch_decode(
-    #         output["repetitions"], skip_special_tokens=True
-    #     )
-    #     output["predictions"] = postprocess(
-    #         self.decoder.tokenizer.batch_decode(
-    #             output["sequences"], skip_special_tokens=True
-    #         ),
-    #         markdown_fix=False,
-    #     )
-    #     # output["predictions"]=self.decoder.tokenizer.batch_decode(
-    #     #         output["sequences"], skip_special_tokens=True
-    #     #     )
-
-    #     if return_attentions:
-    #         output["attentions"] = {
-    #             "self_attentions": decoder_output.decoder_attentions,
-    #             "cross_attentions": decoder_output.cross_attentions,
-    #         }
-    #     print("pad_token_id:", self.decoder.tokenizer.pad_token_id)
-    #     print("eos_token_id:", self.decoder.tokenizer.eos_token_id)
-
-    #     decoded_sequence = self.decoder.tokenizer.decode(decoder_output.sequences[0].tolist())
-    #     print("Decoded Sequence:", decoded_sequence)
-    #     return output
-    
-
-
     def inference(
         self,
         image: Image.Image = None,
+        text: str = None,
         image_tensors: Optional[torch.Tensor] = None,
+        text_tensors: Optional[torch.Tensor] = None,
         return_attentions: bool = False,
         early_stopping: bool = True,
         ):
@@ -809,15 +697,28 @@ class PDF_2_TEX_Model(PreTrainedModel):
             logging.warn("Image not found")
             return output
 
+        if text is None and text_tensors is None:
+            logging.warn("text not found")
+            return output
+        
         if image_tensors is None:
-            image_tensors = self.encoder.prepare_input(image).unsqueeze(0)
+            image_tensors = self.img_encoder.prepare_input(image).unsqueeze(0)
+
+        if text_tensors is None:
+            text_tensors = self.txt_encoder.prepare_input(text).unsqueeze(0)
 
         if self.device.type != "mps":
             image_tensors = image_tensors.to(next(self.parameters()).dtype)
-
         image_tensors = image_tensors.to(self.device)
 
-        last_hidden_state = self.encoder(image_tensors)
+        if self.device.type != "mps":
+            text_tensors = text_tensors.to(next(self.parameters()).dtype)
+        text_tensors = text_tensors.to(self.device)
+
+        img_last_hidden_state = self.img_encoder(image_tensors)
+        txt_last_hidden_state = self.txt_encoder(text_tensors)
+        ## Combining logic to be changes
+        last_hidden_state = torch.cat((img_last_hidden_state, txt_last_hidden_state), dim=1)
 
         encoder_outputs = ModelOutput(
             last_hidden_state=last_hidden_state, attentions=None
@@ -827,9 +728,10 @@ class PDF_2_TEX_Model(PreTrainedModel):
             encoder_outputs.last_hidden_state = (
                 encoder_outputs.last_hidden_state.unsqueeze(0)
             )
-        print("encoder_outputs.last_hidden_state shape:", encoder_outputs.last_hidden_state.shape)
-        print("encoder_outputs.last_hidden_state:", encoder_outputs.last_hidden_state)
+
+        # print("encoder_outputs.last_hidden_state shape:", encoder_outputs.last_hidden_state.shape)
         # get decoder output
+
         decoder_output = self.decoder.model.generate(
             encoder_outputs=encoder_outputs,
             min_length=1,
@@ -953,7 +855,7 @@ class PDF_2_TEX_Model(PreTrainedModel):
             max_length != model.config.max_position_embeddings
         ):  # if max_length of trained model differs max_length you want to train
             model.decoder.model.model.decoder.embed_positions.weight = torch.nn.Parameter(
-                model.decoder.resize_mistral_abs_pos_emb(
+                model.decoder.resize_bart_abs_pos_emb(
                     model.decoder.model.model.decoder.embed_positions.weight,
                     max_length
                     + 2,  # https://github.com/huggingface/transformers/blob/v4.11.3/src/transformers/models/mbart/modeling_mbart.py#L118-L119

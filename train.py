@@ -3,7 +3,7 @@ import os
 # os.environ["TOKENIZERS_PARALLELISM"] = "True"
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:<enter-size-here>"
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 import torch
 # torch.cuda.empty_cache()
 from pdf_2_tex import pdf_2_tex_Dataset

@@ -25,7 +25,10 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+pdf_2_tex/dataset/img_tensor
+pdf_2_tex/dataset/text_tensor
+pdf_2_tex/dataset/latex_tensor
+pdf_2_tex/dataset/root
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
