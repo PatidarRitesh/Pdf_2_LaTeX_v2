@@ -19,6 +19,9 @@ from transformers import (
     BertModel,
     BertTokenizer,
     BertConfig,
+    LongformerModel,
+    LongformerTokenizer,
+    LongformerConfig,
     PreTrainedTokenizerFast,
     StoppingCriteria,
     StoppingCriteriaList,
@@ -35,7 +38,7 @@ import fitz # PyMuPDF
 
 
 
-class BERTEncoder(nn.Module):
+class txtEncoder(nn.Module):
     """
     Encoder based on BERT (Bidirectional Encoder Representations from Transformers)
 
@@ -66,8 +69,8 @@ class BERTEncoder(nn.Module):
         self.num_attention_heads = num_attention_heads
         
 
-        self.model = BertModel(
-            config = BertConfig(
+        self.model = LongformerModel(
+            config = LongformerConfig(
                 hidden_size=1024,
                 max_position_embeddings=1024,
                 num_attention_heads=16
@@ -76,8 +79,8 @@ class BERTEncoder(nn.Module):
         
         # Initialize BERT model
         if not txt_enc_name_or_path:
-            txt_enc_name_or_path = "bert-base-uncased"
-        self.model = BertModel.from_pretrained(txt_enc_name_or_path)
+            txt_enc_name_or_path = "allenai/longformer-base-4096"
+        self.model = LongformerModel.from_pretrained(txt_enc_name_or_path)
         
         self.Linear = nn.Linear(
                             in_features = 768,
@@ -100,30 +103,44 @@ class BERTEncoder(nn.Module):
     def prepare_input(self, pdf_path:str, random_padding: bool = False):
         # open pdf and generate text from the first page of pdf
 
-        paper_id = pdf_path.split('/')[-1]
-        txt_path = f"/mnt/NAS/patidarritesh/grounding_text_PDF_2_LaTeX/pdf_2_tex/dataset/text_tensor/{paper_id}.pkl"
+        # paper_id = pdf_path.split('/')[-1][:-4]
+        # txt_path = f"/mnt/NAS/patidarritesh/Pdf_2_LaTeX_v2_LONGFORMER/pdf_2_tex/dataset/text_tensor/{paper_id}.pkl"
          
-        if not os.path.exists(txt_path):
-            doc = fitz.open(pdf_path)
-            text = doc[0].get_text()
-            # print("text: ", text)
+        # if not os.path.exists(txt_path):
+        doc = fitz.open(pdf_path)
+        text = doc[0].get_text()
+        # print("text: ", text)
 
-            # Tokenize the text
-            tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-            text_input_ids = tokenizer(text, return_tensors="pt")["input_ids"].squeeze(0)
+        # Tokenize the text
+        tokenizer = LongformerTokenizer.from_pretrained("allenai/longformer-base-4096")
+        text_input_ids = tokenizer(text, return_tensors="pt", max_length = 1024, truncation=True, padding=True)["input_ids"].squeeze(0)
 
             # print("Text Input IDS: ", text_input_ids)
             # print("Text Input IDS Shape: ", text_input_ids.shape)
 
-            with open(txt_path, "wb") as f:
-                f.write({"text_input_ids": text_input_ids})
+            # Serialize the dictionary to bytes
+        #     data = {"text_input_ids": text_input_ids}
+        #     serialized_data = pickle.dumps(data)
+
+        #     with open(txt_path, "wb") as f:
+        #         f.write(serialized_data)
                 
-        else:
-            with open(txt_path, "rb") as f:
-                text_input_ids = pickle.load(f)
-                text_input_ids = torch.tensor(text_input_ids['text_input_ids'])
-    
-        return text_input_ids[:512]
+        # else:
+        #     # print("inside else, opening text tensor")
+        #     if os.path.getsize(txt_path) > 0:  # Check if file is not empty
+        #         with open(txt_path, "rb") as f:
+        #             try:
+        #                 text_input_ids = pickle.load(f)
+        #                 text_input_ids = torch.tensor(text_input_ids['text_input_ids'])
+        #             except Exception as e:
+        #                 print(f"TXT_INPUT_ID Error in {pdf_path}: {e}")
+        #                 text_input_ids = None  # or any other appropriate action
+        #     else:
+        #         print(f"TXT_INPUT_ID Error: {pdf_path} is empty.")
+        #         text_input_ids = None 
+        if(len(text_input_ids) > 1024):
+            text_input_ids = text_input_ids[:1024]
+        return text_input_ids
     
 class SwinEncoder(nn.Module):
     r"""
@@ -242,63 +259,80 @@ class SwinEncoder(nn.Module):
         if pdf_path is None:
             return
         
-        paper_id = pdf_path.split('/')[-1]
-        img_file = f"/mnt/NAS/patidarritesh/grounding_text_PDF_2_LaTeX/pdf_2_tex/dataset/img_tensor/{paper_id}.pkl"
+        # paper_id = pdf_path.split('/')[-1]
+        # img_file = f"/mnt/NAS/patidarritesh/Pdf_2_LaTeX_v2_LONGFORMER/pdf_2_tex/dataset/img_tensor/{paper_id}.pkl"
 
-        if not os.path.exists(img_file):
-            input_size= [896,672]
-            doc = fitz.open(pdf_path)
-            i=0
-            for page_number in range(len(doc)):
-                if i==1:
-                    break
-                page = doc[page_number]
-                image = page.get_pixmap()
-                img = Image.frombytes("RGB", [image.width, image.height], image.samples)
+        # if not os.path.exists(img_file):
+        input_size= [896,672]
+        doc = fitz.open(pdf_path)
+        i=0
+        for page_number in range(len(doc)):
+            if i==1:
+                break
+            page = doc[page_number]
+            image = page.get_pixmap()
+            img = Image.frombytes("RGB", [image.width, image.height], image.samples)
 
-                try:
-                    img = self.crop_margin(img.convert("RGB"))
-                except OSError:
-                    return
-                if img.height == 0 or img.width == 0:
-                    return
-                if self.align_long_axis and (
-                    (input_size[0] > input_size[1] and img.width > img.height)
-                    or (input_size[0] < input_size[1] and img.width < img.height)
-                ):
-                    img = rotate(img, angle=-90, expand=True)
-                img = resize(img, min(input_size))
-                img.thumbnail((input_size[1], input_size[0]))
-                delta_width = input_size[1] - img.width
-                delta_height = input_size[0] - img.height
-                if random_padding:
-                    pad_width = np.random.randint(low=0, high=delta_width + 1)
-                    pad_height = np.random.randint(low=0, high=delta_height + 1)
-                else:
-                    pad_width = delta_width // 2
-                    pad_height = delta_height // 2
-                padding = (
-                    pad_width,
-                    pad_height,
-                    delta_width - pad_width,
-                    delta_height - pad_height,
-                )
-                padded_img = ImageOps.expand(img, padding)
+            try:
+                img = self.crop_margin(img.convert("RGB"))
+            except OSError:
+                return
+            if img.height == 0 or img.width == 0:
+                return
+            if self.align_long_axis and (
+                (input_size[0] > input_size[1] and img.width > img.height)
+                or (input_size[0] < input_size[1] and img.width < img.height)
+            ):
+                img = rotate(img, angle=-90, expand=True)
+            img = resize(img, min(input_size))
+            img.thumbnail((input_size[1], input_size[0]))
+            delta_width = input_size[1] - img.width
+            delta_height = input_size[0] - img.height
+            if random_padding:
+                pad_width = np.random.randint(low=0, high=delta_width + 1)
+                pad_height = np.random.randint(low=0, high=delta_height + 1)
+            else:
+                pad_width = delta_width // 2
+                pad_height = delta_height // 2
+            padding = (
+                pad_width,
+                pad_height,
+                delta_width - pad_width,
+                delta_height - pad_height,
+            )
+            padded_img = ImageOps.expand(img, padding)
 
-                page_tensor = self.to_tensor(padded_img)
-                
-                if self.input_tensor is None:
-                    self.input_tensor = page_tensor
-                else:
-                    self.input_tensor = torch.cat([self.input_tensor, page_tensor], dim=1)
-                i+=1
+            page_tensor = self.to_tensor(padded_img)
+            
+            if self.input_tensor is None:
+                self.input_tensor = page_tensor
+            else:
+                self.input_tensor = torch.cat([self.input_tensor, page_tensor], dim=1)
+            i+=1
 
-            with open(img_file, "wb") as f:
-                pickle.dump(self.input_tensor, f)
-        else:
-            with open(img_file, "rb") as f:
-                self.input_tensor = pickle.load(f)
-                self.input_tensor = torch.tensor(self.input_tensor)
+            # # Serialize the dictionary to bytes
+            # data = {"img_input_ids": self.input_tensor}
+            # serialized_data = pickle.dumps(data)
+
+            # with open(img_file, "wb") as f:
+            #     f.write(serialized_data)
+            #     pickle.dump(self.input_tensor, f)
+        # else:
+        #     # with open(img_file, "rb") as f:
+        #     #     self.input_tensor = pickle.load(f)
+        #     #     self.input_tensor = torch.tensor(self.input_tensor)
+        #     # print("inside else, opening text tensor")
+        #     if os.path.getsize(img_file) > 0:  # Check if file is not empty
+        #         with open(img_file, "rb") as f:
+        #             try:
+        #                 self.input_tensor = pickle.load(f)
+        #                 self.input_tensor = torch.tensor(self.input_tensor['img_input_ids'])
+        #             except Exception as e:
+        #                 print(f"IMG_INPUT_ID Error in {pdf_path}: {e}")
+        #                 self.input_tensor = None  # or any other appropriate action
+        #     else:
+        #         print(f"IMG_INPUT_ID Error: {pdf_path} is empty.")
+        #         self.input_tensor = None 
 
         return self.input_tensor
 
@@ -599,7 +633,7 @@ class PDF_2_TEX_Model(PreTrainedModel):
     def __init__(self, config: PDF_2_TEX_Config):
         super().__init__(config)
         self.config = config
-        self.txt_encoder = BERTEncoder(
+        self.txt_encoder = txtEncoder(
             max_position_embeddings=1024,
             hidden_size=1024,
             num_attention_heads=16,

@@ -52,39 +52,43 @@ class pdf_2_tex_Dataset(Dataset):
         img_input_tensor = self.pdf_2_tex_model.img_encoder.prepare_input(pdf_path, random_padding=True)
         txt_input_tensor = self.pdf_2_tex_model.txt_encoder.prepare_input(pdf_path)
 
-        paper_id = pdf_path.split('/')[-1]
+        # paper_id = pdf_path.split('/')[-1]
 
-        pkl_file = f"/mnt/NAS/patidarritesh/grounding_text_PDF_2_LaTeX/pdf_2_tex/dataset/latex_tensor/{paper_id}.pkl"
+        # pkl_file = f"/mnt/NAS/patidarritesh/Pdf_2_LaTeX_v2_LONGFORMER/pdf_2_tex/dataset/latex_tensor/{paper_id}.pkl"
 
-        if not os.path.exists(pkl_file):
-            print("Latex path not exists: Running the tokenizer")
-            with open(latex_path, "rb") as f:
-                gnd_truth_data = f.read()
-                try:
-                    gnd_truth_data = gnd_truth_data.decode("utf-8")  # Try decoding with UTF-8
-                except:
-                    gnd_truth_data = gnd_truth_data.decode("latin-1", errors="ignore")  # Fallback to Latin-1, ignore errors
+        # if not os.path.exists(pkl_file):
+            # print("Latex path not exists: Running the tokenizer")
+        with open(latex_path, "rb") as f:
+            gnd_truth_data = f.read()
+            try:
+                gnd_truth_data = gnd_truth_data.decode("utf-8")  # Try decoding with UTF-8
+            except:
+                gnd_truth_data = gnd_truth_data.decode("latin-1", errors="ignore")  # Fallback to Latin-1, ignore errors
 
-            tokenizer_out = self.pdf_2_tex_model.decoder.tokenizer(
-                gnd_truth_data,
-                max_length=self.max_length,
-                padding="max_length",
-                return_token_type_ids=False,
-                truncation=True,
-                return_tensors="pt",
-            )
-            input_ids = tokenizer_out["input_ids"].squeeze(0)
-            attention_mask = tokenizer_out["attention_mask"].squeeze(0)
+        tokenizer_out = self.pdf_2_tex_model.decoder.tokenizer(
+            gnd_truth_data,
+            max_length=self.max_length,
+            padding="max_length",
+            return_token_type_ids=False,
+            truncation=True,
+            return_tensors="pt",
+        )
+        input_ids = tokenizer_out["input_ids"].squeeze(0)
+        attention_mask = tokenizer_out["attention_mask"].squeeze(0)
 
 
-            with open(pkl_file, "wb") as f:
-                pickle.dump({"input_ids": input_ids, "attention_mask": attention_mask}, f)
+            # Serialize the dictionary to bytes
+        #     data = {"input_ids": input_ids, "attention_mask": attention_mask}
+        #     serialized_data = pickle.dumps(data)
 
-        else:
-            with open(pkl_file, "rb") as f:
-                tokenizer_out = pickle.load(f)
-                input_ids = tokenizer_out["input_ids"].squeeze(0)
-                attention_mask = tokenizer_out["attention_mask"].squeeze(0)
+        #     with open(pkl_file, "wb") as f:
+        #         f.write(serialized_data)
+            
+        # else:
+        #     with open(pkl_file, "rb") as f:
+        #         tokenizer_out = pickle.load(f)
+        #         input_ids = tokenizer_out["input_ids"].squeeze(0)
+        #         attention_mask = tokenizer_out["attention_mask"].squeeze(0)
         
         
         return img_input_tensor, txt_input_tensor, input_ids, attention_mask
@@ -115,14 +119,20 @@ class test_dataset(Dataset):
 
     def __len__(self):
         return self.dataset_length
-
     def __getitem__(self, idx):
 
         pdf_path = self.pdf_path[idx]
         latex_path = self.latex_path[idx]
 
-        input_tensor = self.pdf_2_tex_model.encoder.prepare_input(pdf_path, random_padding=True)
+        img_input_tensor = self.pdf_2_tex_model.img_encoder.prepare_input(pdf_path, random_padding=True)
+        txt_input_tensor = self.pdf_2_tex_model.txt_encoder.prepare_input(pdf_path)
 
+        # paper_id = pdf_path.split('/')[-1]
+
+        # pkl_file = f"/mnt/NAS/patidarritesh/Pdf_2_LaTeX_v2_LONGFORMER/pdf_2_tex/dataset/latex_tensor/{paper_id}.pkl"
+
+        # if not os.path.exists(pkl_file):
+            # print("Latex path not exists: Running the tokenizer")
         with open(latex_path, "rb") as f:
             gnd_truth_data = f.read()
             try:
@@ -130,7 +140,6 @@ class test_dataset(Dataset):
             except:
                 gnd_truth_data = gnd_truth_data.decode("latin-1", errors="ignore")  # Fallback to Latin-1, ignore errors
 
-        
         tokenizer_out = self.pdf_2_tex_model.decoder.tokenizer(
             gnd_truth_data,
             max_length=self.max_length,
@@ -141,18 +150,21 @@ class test_dataset(Dataset):
         )
         input_ids = tokenizer_out["input_ids"].squeeze(0)
         attention_mask = tokenizer_out["attention_mask"].squeeze(0)
-        """      
-        # randomly perturb ground truth tokens
-        if self.split == "train" and self.perturb:
-            # check if we perturb tokens
-            unpadded_length = attention_mask.sum()
-            while random.random() < 0.1:
-                try:
-                    pos = random.randint(1, unpadded_length - 2)
-                    token = random.randint(
-                        23, len(self.pdf_2_tex_model.decoder.tokenizer) - 1
-                    )
-                    input_ids[pos] = token
-                except ValueError:
-                    break"""
-        return input_tensor, input_ids, attention_mask, os.path.basename(latex_path)
+
+
+            # Serialize the dictionary to bytes
+        #     data = {"input_ids": input_ids, "attention_mask": attention_mask}
+        #     serialized_data = pickle.dumps(data)
+
+        #     with open(pkl_file, "wb") as f:
+        #         f.write(serialized_data)
+            
+        # else:
+        #     with open(pkl_file, "rb") as f:
+        #         tokenizer_out = pickle.load(f)
+        #         input_ids = tokenizer_out["input_ids"].squeeze(0)
+        #         attention_mask = tokenizer_out["attention_mask"].squeeze(0)
+        
+        
+        return img_input_tensor, txt_input_tensor, input_ids, attention_mask,os.path.basename(latex_path)
+        

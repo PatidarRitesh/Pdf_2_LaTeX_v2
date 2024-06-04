@@ -1,7 +1,7 @@
 import os
 
 # os.environ["TOKENIZERS_PARALLELISM"] = "True"
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]="3"
 # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:<enter-size-here>"
 # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 import torch
@@ -121,6 +121,7 @@ class GradNormCallback(Callback):
         return total_norm
 
     def on_after_backward(self, trainer, model):
+        # print("grad_norm: ",self.gradient_norm(model))
         model.log("train/grad_norm", self.gradient_norm(model))
 
 
@@ -231,7 +232,7 @@ def train(config):
         gradient_clip_val=config.gradient_clip_val,
         log_every_n_steps=15,
         # precision="16-mixed",
-        precision=16,    # Ritesh chenges
+        precision="32",    # Ritesh chenges
         num_sanity_val_steps=0,
       
         logger=logger,

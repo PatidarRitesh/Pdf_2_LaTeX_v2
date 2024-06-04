@@ -70,7 +70,10 @@ class PDF_2_TEX_ModelPLModule(pl.LightningModule):
         decoder_input_ids = torch.cat(decoder_input_ids)
         attention_masks = torch.cat(attention_masks)
         loss = self.model(image_tensors, text_tensors, decoder_input_ids, attention_masks)[0]
+
+
         if loss is not None:
+            
             self.log_dict({"train/loss": loss}, sync_dist=True)
         return loss
 

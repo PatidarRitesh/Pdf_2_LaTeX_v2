@@ -1,0 +1,60 @@
+
+\importpackages{}
+\graphicspath{ {./images/} }
+\begin{document}
+\title{Speech Corpora Divergence Based Unsupervised Data Selection for ASR}
+\author{Changfeng~Gao,
+~\IEEEmembership{Student Member,~IEEE,}
+        Gaofeng~Cheng,~\IEEEmembership{Member,~IEEE,}
+        Pengyuan~Zhang,~\IEEEmembership{Member,~IEEE,}
+        Yon
+ghong~Yan,~\IEEEmembership{Member,~IEEE,}
+\thanks{The authors are with the Key Laboratory of Speech Acoustics and Content Understanding, Institute of Acoustics, Ch
+inese Academy of Sciences,
+Beijing 100864, China. University of Chinese Academy of Sciences (e-mail: gaochangfeng@hccl.ioa.ac.cn;  chenggaofeng@hccl.ioa.ac.cn; zhang
+pengyuan@hccl.ioa.ac.cn; yanyonghong@hccl.ioa.ac.cn}
+}
+\maketitle
+\begin{abstract}
+\textbf{
+Selecting application scenarios matching data is important for the automatic 
+speech recognition (ASR) training, but it is difficult to measure the matching degree of the training corpus.
+This study proposes a unsupervised target-aware data selection method based on speech corpora divergence (SCD),
+which can measure the similarity between two speech corpora.
+We first use the self-supervised Hubert model t o discretize the speech corpora into label sequence and calculate the N-gram probability distribution. 
+Then we calculate the Kullback-Leibler divergence between the N-grams as the SCD.
+Finally, we can choose the subset which has minimum SCD to the target corpus for annotation and training.
+Compared to previous data selection m
+ethod, the SCD data selection method can focus on more acoustic details and guarantee the diversity of the selected set.
+We evaluate our method on different accents 
+from Common Voice. Experiments show that the proposed SCD data selection can realize 14.8\% relative improvements to the random selection, 
+comparable or even superior to the result of supervised selection.}
+\end{abstract}
+\begin{IEEEkeywords}
+Automatic speech recognition, data selection, self-supervised learning.
+\end{IEEEkeywords}
+\section{Introduction}
+For the automatic speech recognition (ASR), speech annotation is an expensive and time-consuming work. People can easily collect en
+ormous unsupervised corpus from websites, broadcasts, and podcasts, but only a minority of them can be annotated artificially.
+Moreover, as the training data matchin
+g is crucial for the ASR system [1],[2] it is important to select a suitable subset for annotation and training according to the 
+target scenarios like accented [3], far-field[4] and children [5] ASR.
+Although we can manually select the matching training corpus by accent, speaker, or channel for annotation, it is difficult to describe the corpus's 
+similarity mathematically and select the training speech automatically.  In general, most works believes that a well-designed training set should have
+similar distri bution with the target corpus, but it is difficult to measure the speech corpus distribution.To solve this problem, the most common method 
+is measuring the speech distribution with the transcription [9]. [9] uses the frequency of the word, character or phoneme to measure the transcription 
+distribution and then samples data uniformly. And to sample unlabeled speech,uses a baseline ASR model to decode the N-Best hypothesis and then calculate 
+the term frequency-inverse document frequency (tf-idf) for data selection.As the text-level distribution is too rough to measure the acoustic difference 
+of the speech, [11] count the distribution according to the context-dependent HMM states to capture more acoustic details.However, the HMM states still 
+largely depends on the speech transcription and the lexicon, it can not still measure the difference between sex, accent or ther acoustic charact eristics.
+Besides selection by the distribution, contrastive sampling [13]-[18] is another recent popular data selection method.Most of them usea uni versal and a 
+target domain ASR model to score theutterances by the confidence score or the hypothesis perplexity.
+Then they will sample the utteranceswhich has largest gap between the target and the universal score one by one. Using different domain ASR models can 
+evaluate the speech from theacoustic characteristics well, however, it also tend to choosesimilar speech and reduce the diversity of the selected set.
+In this study, we design a novel target-aware data selectionmethod by proposing the speech corpora divergence (SCD).
+We use the self-supervised learning (SSL) model, to discretize the speech and then measure the speech
+distribution in the discrete space. We count the N-gram of the discrete corpus and use the Kullback-Leibler divergence
+(KLD) to calculate the SCD. Then we can select a subset from the universal unlabeled corpus by minimizing the SCD
+between the selected corpus and the target corpus and further use greedy search to simplify the algorithm complexity.
+Compared with the previous works, the Hubert discrete labels can contain both acoustic and semantic information, so it
+can represent the speech distribution better than the textrelated labels like word, char and HMM states. And as theSCD selection method considers the 
