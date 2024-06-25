@@ -1,7 +1,10 @@
 import os
 
 # os.environ["TOKENIZERS_PARALLELISM"] = "True"
-os.environ["CUDA_VISIBLE_DEVICES"]="3"
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["force_download"]="True"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:<enter-size-here>"
 # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 import torch
@@ -11,6 +14,7 @@ from lightning_module import PDF_2_TEX_DataPLModule, PDF_2_TEX_ModelPLModule
 import argparse
 import datetime
 from os.path import basename
+
 from pathlib import Path
 import lightning.pytorch as pl
 
@@ -19,6 +23,7 @@ from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     Callback,
     GradientAccumulationScheduler,
+
     # QuantizationAwareTraining
 )
 from lightning.pytorch.loggers.tensorboard import TensorBoardLogger
@@ -191,11 +196,9 @@ def train(config):
     lr_callback = LearningRateMonitor(logging_interval="step")
 
     checkpoint_callback = ModelCheckpoint(
+        every_n_train_steps = config.every_n_train_steps,
         save_last=True,
         dirpath=Path(config.result_path) / config.exp_name / config.exp_version,
-    
-       
-
     )
     grad_norm_callback = GradNormCallback()
     custom_ckpt = CustomCheckpointIO()
@@ -228,6 +231,8 @@ def train(config):
         max_steps=config.max_steps,
         val_check_interval=config.val_check_interval,
         check_val_every_n_epoch=config.check_val_every_n_epoch,
+
+        
         limit_val_batches=config.val_batches,
         gradient_clip_val=config.gradient_clip_val,
         log_every_n_steps=15,
@@ -243,6 +248,7 @@ def train(config):
             GradientAccumulationScheduler({0: config.accumulate_grad_batches}),
             # qcb,
         ],
+    
     )
     print("Trainer is ready")
     trainer.fit(

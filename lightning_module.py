@@ -55,7 +55,7 @@ class PDF_2_TEX_ModelPLModule(pl.LightningModule):
             )
 
     def training_step(self, batch, batch_idx):
-        image_tensors, text_tensors, decoder_input_ids, attention_masks = list(), list(),list(), list()
+        image_tensors, text_tensors, decoder_input_ids, attention_masks,filename = list(), list(),list(), list(), list()
         if batch is None:
             return
         for batch_data in batch:
@@ -65,10 +65,13 @@ class PDF_2_TEX_ModelPLModule(pl.LightningModule):
             text_tensors.append(batch_data[1])
             decoder_input_ids.append(batch_data[2])
             attention_masks.append(batch_data[3])
+            filename.append(batch_data[4])
         image_tensors = torch.cat(image_tensors)
         text_tensors = torch.cat(text_tensors)
         decoder_input_ids = torch.cat(decoder_input_ids)
         attention_masks = torch.cat(attention_masks)
+        # print("Inside Training step: ")
+        # print(filename)
         loss = self.model(image_tensors, text_tensors, decoder_input_ids, attention_masks)[0]
 
 
@@ -80,12 +83,12 @@ class PDF_2_TEX_ModelPLModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx, dataset_idx=0):
         if batch is None:
             return
-        image_tensors, text_tensors, decoder_input_ids, _ = batch
+        image_tensors, text_tensors, decoder_input_ids, _, filename = batch
         if image_tensors is None:
             return
         if text_tensors is None:
             return
-        markdown = pad_sequence(
+        latex = pad_sequence(
             decoder_input_ids,
             batch_first=True,
         )
@@ -97,7 +100,7 @@ class PDF_2_TEX_ModelPLModule(pl.LightningModule):
 
         print("preds", preds)
         gts = self.model.decoder.tokenizer.batch_decode(
-            markdown, skip_special_tokens=True
+            latex, skip_special_tokens=True
         )
         metrics = get_metrics(gts, preds, pool=False)
         print("Inside validation_step of lightning_module.py")
@@ -245,7 +248,7 @@ class PDF_2_TEX_DataPLModule(pl.LightningDataModule):
                 pin_memory=True,
                 # num_workers=self.config.num_workers,
                 # generator=self.g,  # added by Ritesh
-                shuffle=True,
+                # shuffle=True,
                 collate_fn=self.ignore_none_collate,
             )
         ]

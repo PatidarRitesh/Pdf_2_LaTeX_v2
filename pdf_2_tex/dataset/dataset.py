@@ -75,7 +75,7 @@ class pdf_2_tex_Dataset(Dataset):
         )
         input_ids = tokenizer_out["input_ids"].squeeze(0)
         attention_mask = tokenizer_out["attention_mask"].squeeze(0)
-
+        filename = pdf_path.split('/')[-1]
 
             # Serialize the dictionary to bytes
         #     data = {"input_ids": input_ids, "attention_mask": attention_mask}
@@ -91,7 +91,7 @@ class pdf_2_tex_Dataset(Dataset):
         #         attention_mask = tokenizer_out["attention_mask"].squeeze(0)
         
         
-        return img_input_tensor, txt_input_tensor, input_ids, attention_mask
+        return img_input_tensor, txt_input_tensor, input_ids, attention_mask, filename
     
 
 class test_dataset(Dataset):

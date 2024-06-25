@@ -1,7 +1,7 @@
-resume_from_checkpoint_path: '/mnt/NAS/patidarritesh/Pdf_2_LaTeX_v2_LONGFORMER/result/grounding_pdf_2_tex/20240521_004012/last.ckpt'
+resume_from_checkpoint_path: null
 result_path: "result"
 model_path: null
-dataset_paths: ["/mnt/NAS/patidarritesh/Pdf_2_LaTeX_v2_LONGFORMER/pdf_2_tex/dataset/root/train.jsonl"]
+dataset_paths: ["/mnt/NAS/husainmalwat/pdf_2_Tex/longformer/Pdf_2_LaTeX_v2/pdf_2_tex/dataset/root/train_check.jsonl"]
 tokenizer: "dataset/tokenizer.json"
 exp_name: "grounding_pdf_2_tex"
 train_batch_sizes: [1]
@@ -30,7 +30,8 @@ warmup_steps: 250
 num_training_samples_per_epoch: 100000
 max_epochs: 50
 max_steps: -1
-val_check_interval: null
+val_check_interval: 0.1
 check_val_every_n_epoch: 1
 gradient_clip_val: 0.5
 verbose: False
+every_n_train_steps: 160000
