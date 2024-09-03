@@ -2,7 +2,7 @@
 import argparse
 import json
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="3"
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
 import logging
 from multiprocessing import Pool
 from collections import defaultdict
@@ -49,7 +49,8 @@ def test(args):
         collate_fn=PDF_2_TEX_DataPLModule.ignore_none_collate,
     )
 
-    for idx, sample in tqdm(enumerate(dataloader), total=1000):
+    # print("Dataloder length: ", len(dataloader))
+    for idx, sample in tqdm(enumerate(dataloader), total=len(dataloader)):
         if sample is None:
             continue
         image_tensors, txt_input_tensor, decoder_input_ids, _ ,latex_path= sample
@@ -95,7 +96,7 @@ def test(args):
             json.dump(scores, f)
     
     
-    score_path='/mnt/NAS/patidarritesh/Pdf_2_LaTeX_v2_LONGFORMER/Scores.json'
+    score_path='/mnt/NAS/husainmalwat/pdf_2_Tex/dummy_test/Pdf_2_LaTeX_v2/test_results/Scores.json'
     with open(score_path, 'w') as f:
         json.dump(only_scores, f)
     

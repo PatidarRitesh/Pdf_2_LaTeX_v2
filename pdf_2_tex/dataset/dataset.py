@@ -35,12 +35,16 @@ class pdf_2_tex_Dataset(Dataset):
         self.pdf_path = []
         self.latex_path = []    
         split_path = Path(dataset_path).parent / f"{split}.jsonl"
+
+        print(f"Reading {split} from {split_path}")
         with jsonlines.open(split_path) as reader:
             for line_number, line in enumerate(reader, start=1):
                 self.pdf_path.append(line['pdf'])
                 self.latex_path.append(line['latex'])
         self.dataset_length = line_number
 
+        print(f"{split} Dataset length: {self.dataset_length}")
+        
     def __len__(self):
         return self.dataset_length
 
